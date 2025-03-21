@@ -1,0 +1,392 @@
+.admin-container {
+    padding: 20px;
+    text-align: center;
+    background: linear-gradient(135deg, #214f2f, #193a23);
+    background-size: 200%;
+    color: #ffffff;
+    animation: backgroundMove 8s infinite alternate ease-in-out;
+    overflow: hidden;
+}
+
+/* 背景动态效果 */
+@keyframes backgroundMove {
+    0% {
+        background-position: 0% 50%;
+    }
+    100% {
+        background-position: 100% 50%;
+    }
+}
+
+.admin-boxes {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 20px;
+    flex-wrap: wrap; /* 支持小屏幕下的自动换行 */
+    gap: 20px;
+}
+
+.admin-box {
+    width: 45%;
+    max-width: 400px;
+    padding: 25px;
+    border-radius: 15px;
+    background: linear-gradient(135deg, #2e7046, #3c8a5b);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    color: #ffffff;
+}
+
+.admin-box:hover {
+    transform: translateY(-10px) scale(1.05);
+    box-shadow: 0 15px 25px rgba(0, 0, 0, 0.3), 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.admin-box h2 {
+    margin-bottom: 15px;
+    font-size: 26px;
+    color: #f0fff0;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.admin-box button {
+    margin-top: 20px;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #3c8a5b, #2e7046);
+    color: white;
+    border: none;
+    border-radius: 30px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.admin-box button:hover {
+    background: linear-gradient(135deg, #2e7046, #3c8a5b);
+    transform: translateY(-5px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* 弹出框背景遮罩 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+/* 弹出框内容 */
+.modal-content {
+    position: relative;
+    background: #193a23;
+    width: 80%;
+    max-width: 900px;
+    padding: 40px;
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    color: #ffffff;
+    overflow-y: auto;
+}
+
+.modal-content h2 {
+    margin-bottom: 20px;
+    font-size: 28px;
+    color: #f0fff0;
+    text-align: center;
+}
+
+.search-export {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.search-input {
+    padding: 12px 16px;
+    width: 60%;
+    max-width: 400px;
+    border: 2px solid #3c8a5b;
+    border-radius: 30px 0 0 30px;
+    font-size: 16px;
+    color: #ffffff;
+    background: linear-gradient(135deg, #1b3023, #244634);
+    box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.2);
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.search-input::placeholder {
+    color: #a8d5c6;
+    font-style: italic;
+}
+
+.search-input:focus {
+    border-color: #5ac09d;
+    box-shadow: 0 0 8px rgba(90, 192, 157, 0.8);
+    background: linear-gradient(135deg, #214f2f, #3c8a5b);
+}
+
+.search-button {
+    padding: 12px 16px;
+    background: #3c8a5b;
+    color: white;
+    border: none;
+    border-radius: 0 30px 30px 0;
+    font-size: 16px;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transition: background 0.3s ease;
+    margin-right: 1180px;
+}
+
+.search-button:hover {
+    background: #2e7046;
+}
+
+.export-button {
+    padding: 10px 20px;
+    background: #3c8a5b;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-left: 20px;
+}
+
+.export-button:hover {
+    background: #2e7046;
+}
+
+.user-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+.user-table th,
+.user-table td {
+    padding: 15px;
+    text-align: center;
+    border: 1px solid #3c8a5b;
+    color: #ffffff;
+}
+
+.user-table th {
+    background: #2e7046;
+}
+
+.user-table tr:nth-child(even) {
+    background: #244634;
+}
+
+.operation-button {
+    padding: 8px 16px;
+    background: #3c8a5b;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.operation-button:hover {
+    background: #2e7046;
+}
+
+.close-modal-button {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    padding: 10px 20px;
+    background: #3c8a5b;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.close-modal-button:hover {
+    background: #2e7046;
+}
+/* 操作按钮容器 */
+.action-buttons {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+  }
+  
+  /* 验证按钮特殊样式 */
+  .verify-button {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #5ac09d, #3c8a5b);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .verify-button:hover {
+    background: linear-gradient(135deg, #3c8a5b, #2e7046);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  /* 调整操作页面表格间距 */
+  .modal-content .user-table {
+    margin: 20px 0;
+  }
+  
+  /* 操作按钮悬停动画 */
+  .operation-button {
+    transition: all 0.3s ease;
+    padding: 10px 20px;
+  }
+  
+  .operation-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+  .lock-btn {
+    padding: 5px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  
+  .lock-btn.locked {
+    background-color: #ff4444;
+    color: white;
+  }
+  
+  .lock-btn.unlocked {
+    background-color: #00C851;
+    color: white;
+  }
+  
+  .lock-btn:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+  }
+
+  /* 添加模态框输入组样式 */
+.modal-input-group {
+    margin: 20px 0;
+  }
+  
+  .modal-input {
+    width: 80%;
+    padding: 12px 20px;
+    border: 2px solid #3c8a5b;
+    border-radius: 30px;
+    font-size: 16px;
+    color: #ffffff;
+    background: linear-gradient(135deg, #1b3023, #244634);
+    box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.2);
+    outline: none;
+    transition: all 0.3s ease;
+  }
+  
+  .modal-input:focus {
+    border-color: #5ac09d;
+    box-shadow: 0 0 8px rgba(90, 192, 157, 0.8);
+  }
+  
+  /* 操作按钮样式 */
+  .modal-action-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 30px;
+  }
+  
+  .confirm-button {
+    padding: 12px 30px;
+    background: linear-gradient(135deg, #5ac09d, #3c8a5b);
+    color: white;
+    border: none;
+    border-radius: 30px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .confirm-button.delete {
+    background: linear-gradient(135deg, #ff4444, #cc0000);
+  }
+  
+  .confirm-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  .cancel-button {
+    padding: 12px 30px;
+    background: linear-gradient(135deg, #666666, #444444);
+    color: white;
+    border: none;
+    border-radius: 30px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .cancel-button:hover {
+    background: linear-gradient(135deg, #444444, #333333);
+    transform: translateY(-2px);
+  }
+  
+  /* 删除按钮样式 */
+  .operation-button.delete {
+    background: linear-gradient(135deg, #ff4444, #cc0000);
+  }
+  
+  .operation-button.delete:hover {
+    background: linear-gradient(135deg, #cc0000, #aa0000);
+  }
+
+  /* 区块详情按钮样式 */
+.block-info-button {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #3c8a5b, #2e7046);
+    color: white;
+    border-radius: 30px;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+    z-index: 1000;
+  }
+  
+  .block-info-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+  }
+  
+  /* 区块详情模态框样式 */
+  .block-modal {
+    max-width: 800px;
+  }
+  
+  .block-table {
+    margin: 20px 0;
+  }
+  
+  .block-table th,
+  .block-table td {
+    padding: 12px;
+    text-align: center;
+  }
+  
