@@ -54,7 +54,7 @@ export const checkIfVerified = async (address) => {
   }
 };
 
-// IPFS上传函数
+// IPFS上传函数（添加/删除用户）
 export const uploadToIPFS = async (content) => {
   try {
     const res = await axios.post(
@@ -80,6 +80,120 @@ export const uploadToIPFS = async (content) => {
     }
     throw new Error('IPFS上传失败');
   
+  }
+};
+
+// 验证用户
+export const verifyuploadToIPFS = async (content) => {
+  try {
+    const res = await axios.post(
+      'https://api.pinata.cloud/pinning/pinJSONToIPFS',
+      {
+        version: "1.0",
+        type: "identity_verification",
+        ...content,
+        system: "Decentralized Identity System"
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          pinata_api_key: PINATA_API_KEY,
+          pinata_secret_api_key: PINATA_SECRET
+        }
+      }
+    );
+    return res.data.IpfsHash;
+  } catch (error) {
+    if (error.response) {
+      console.error('IPFS上传失败，响应数据：', error.response.data);
+    } else {
+      console.error('IPFS上传失败:', error.message);
+    }
+    throw new Error('IPFS上传失败');
+  }
+};
+// IPFS操作记录上传
+export const recordLockOperation = async (userAddress, operationType) => {
+  try {
+    const operationText = `将用户 ${userAddress} 门锁设为${operationType === 'lock' ? '锁定' : '解锁'}`;
+    
+    const res = await axios.post(
+      'https://api.pinata.cloud/pinning/pinJSONToIPFS',
+      {
+        operation: operationText,
+        timestamp: Date.now(),
+        metadata: {
+          type: "lock_operation",
+          user: userAddress
+        }
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          pinata_api_key: process.env.REACT_APP_PINATA_KEY,
+          pinata_secret_api_key: process.env.REACT_APP_PINATA_SECRET
+        }
+      }
+    );
+    
+    return res.data.IpfsHash;
+  } catch (error) {
+    console.error('IPFS上传失败:', error);
+    throw error;
+  }
+};
+
+// 锁状态切换函数
+export const toggleUserLock = async (userAddress, currentStatus) => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS, 
+      SMART_LOCK_ABI, 
+      signer
+    );
+
+    // 生成IPFS记录
+    const ipfsHash = await recordLockOperation(
+      userAddress, 
+      currentStatus ? 'unlock' : 'lock'
+    );
+
+    // 调用合约
+    const tx = currentStatus ? 
+      await contract.unlock(userAddress, ipfsHash) :
+      await contract.lock(userAddress, ipfsHash);
+
+    const receipt = await tx.wait();
+    return {
+      hash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      timestamp: (await provider.getBlock(receipt.blockNumber)).timestamp
+    };
+  } catch (error) {
+    console.error('切换锁状态失败:', error);
+    throw error;
+  }
+};
+
+// 修改后的获取方法
+export const getLastLockOperationTime = async (address) => {
+  const provider = new ethers.BrowserProvider(window.ethereum);
+  const contract = new ethers.Contract(
+    SMART_LOCK_CONTRACT_ADDRESS,
+    SMART_LOCK_ABI,
+    provider
+  );
+  
+  try {
+    const state = await contract.userStates(address);
+    return state.lastUnlockTime.toString();
+  } catch (error) {
+    console.error('Error fetching last operation:', error);
+    // 从本地存储获取缓存
+    const cached = JSON.parse(localStorage.getItem('lastOperations') || '{}');
+    return cached[address] || '0';
   }
 };
 
@@ -188,26 +302,24 @@ export const getAdmins = async () => {
   }
 };
 
-/**
- * 检查是否为系统用户
- * 示例逻辑：使用 IdentityOracle 合约中的 getIdentityExpiry 方法，如果返回值大于 0，则认为用户已验证为系统用户
- */
-export const checkSystemUser = async (userAddress) => {
-  if (!window.ethereum) return false;
+// 验证过去时间
+export const updateUserExpiry = async (userAddress, expiry, ipfsHash) => {
   try {
     const provider = new ethers.BrowserProvider(window.ethereum);
-    const signer = provider.getSigner();
-    const identityContract = new ethers.Contract(IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI, signer);
-    // 这里假设如果身份过期时间不为0，用户已验证（根据业务可进一步判断是否超过当前时间）
-    const expiry = await identityContract.getIdentityExpiry(userAddress);
-    console.log(`Identity expiry for ${userAddress}:`, expiry.toString());
-    return expiry.gt(0); // 如果返回的是 BigNumber
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI, signer);
+    const tx = await contract.updateUserExpiry(userAddress, expiry, ipfsHash);
+    await tx.wait();
+    return tx;
   } catch (error) {
-    console.error('Error checking system user:', error);
-    alert('检查系统用户状态失败，请重试。');
-    return false;
+    console.error('Error updating user expiry:', error);
+    throw error;
   }
 };
+
+
+
+
 /**
  * 发送消息给管理员，通过从 Governance 合约动态获取管理员地址
  */
@@ -236,44 +348,20 @@ export const sendMessageToAdmin = async (ipfsHash) => {
 /**
  * 获取用户身份过期时间（调用 IdentityOracle 合约）
  */
-export const getUserIdentityExpiry = async (userAddress) => {
-  if (!window.ethereum) return null;
-  try {
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const signer = provider.getSigner();
-    const identityContract = new ethers.Contract(IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI, signer);
-    const expiry = await identityContract.getIdentityExpiry(userAddress);
-    console.log(`Expiry for ${userAddress}:`, expiry.toString());
-    return expiry.toNumber();
-  } catch (error) {
-    console.error('Error getting identity expiry:', error);
-    return null;
-  }
-};
-
-
-// Metamask.js 新增方法
-export const toggleUserLock = async (userAddress, shouldLock) => {
+export const getUserIdentityExpiry = async (address) => {
   const provider = new ethers.BrowserProvider(window.ethereum);
-  const signer = await provider.getSigner();
-  const contract = new ethers.Contract(SMART_LOCK_CONTRACT_ADDRESS, SMART_LOCK_ABI, signer);
+  const contract = new ethers.Contract(
+    IDENTITY_CONTRACT_ADDRESS, 
+    IDENTITY_ABI, 
+    provider
+  );
+  // 直接调用合约中的getIdentityExpiry方法
+  const expiry = await contract.getIdentityExpiry(address);
+  return Number(expiry); // 转换为数字
+}; 
 
-  try {
-    let tx;
-    if (shouldLock) {
-      tx = await contract.lock(userAddress);
-    } else {
-      tx = await contract.unlock(userAddress);
-    }
-    const receipt = await tx.wait(); // 等待交易确认
-    return { 
-      success: true,
-      hash: receipt.hash 
-    };
-  } catch (error) {
-    throw error;
-  }
-};
+
+
 
 export const getLockStatus = async (userAddress) => {
   const provider = new ethers.BrowserProvider(window.ethereum);
@@ -315,55 +403,7 @@ export const  getVerifiedUsers =async() =>{
 
 
 
-// *************************************  
 
-// 切换系统锁定状态      
-export const toggleLockStatus = async (userAddress, setIsLocked) => {
-  const provider = new ethers.BrowserProvider(window.ethereum);
-  const signer = await provider.getSigner();
-  const contract = new ethers.Contract(SMART_LOCK_CONTRACT_ADDRESS, SMART_LOCK_ABI, signer);
-
-  try {
-    // 获取当前状态
-    const currentStatus = await contract.userLockStatus(userAddress);
-    
-    // 执行相反操作
-    if (currentStatus) {
-      const tx = await contract.unlock(userAddress);
-      await tx.wait();
-    } else {
-      const tx = await contract.lock(userAddress);
-      await tx.wait();
-    }
-
-    // 强制刷新状态
-    const updatedStatus = await contract.userLockStatus(userAddress);
-    setIsLocked(updatedStatus);
-    
-  } catch (error) {
-    console.error('操作失败:', error);
-    // 显示具体错误原因
-    alert(`操作失败: ${error.reason || error.message}`);
-  }
-};
-
-// 管理员获取锁的状态
-export const checkLockStatus  = async (userAddress)=>{
-  const provider = new ethers.BrowserProvider(window.ethereum);
-  const signer =await provider.getSigner();
-  const contract = new ethers.Contract(SMART_LOCK_CONTRACT_ADDRESS,SMART_LOCK_ABI,signer);
-
-  try{
-    console.log('Checking lock status for address:',userAddress);
-    const lockStatus =await contract.getLockStatus(userAddress);
-    console.log('lock status:',lockStatus);
-    return lockStatus;
-  }catch (error){
-    console.log('Error checking lock status:',error);
-    return true;// 默认返回关锁状态
-  }
-
-}
 
 
 
@@ -450,22 +490,60 @@ export const getUserIdentityTimestamp = async (userAddress) => {
     throw error;
   }
 };
-
-// 区块信息
-export const fetchTransactionDetails = async (txHash) => {
-  const provider = new ethers.BrowserProvider(window.ethereum);
+// **********************************普通用户
+// 普通用户切换锁状态
+export const toggleUserLockWithIPFS = async (userAddress, currentStatus) => {
   try {
-    const receipt = await provider.getTransactionReceipt(txHash);
-    const block = await provider.getBlock(receipt.blockNumber);
-    
+    // 生成IPFS记录
+    const ipfsHash = await recordLockOperation(
+      userAddress, 
+      currentStatus ? 'unlock' : 'lock'
+    );
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS, 
+      SMART_LOCK_ABI, 
+      signer
+    );
+
+    const tx = currentStatus ? 
+      await contract.unlock(userAddress, ipfsHash) :
+      await contract.lock(userAddress, ipfsHash);
+
+    const receipt = await tx.wait();
     return {
-      txHash: txHash,
+      hash: tx.hash,
       blockNumber: receipt.blockNumber,
-      timestamp: block.timestamp,
-      actionType: '合约操作' // 根据实际操作类型修改
+      timestamp: (await provider.getBlock(receipt.blockNumber)).timestamp
     };
   } catch (error) {
-    console.error('Error fetching transaction details:', error);
-    return null;
+    console.error('切换锁状态失败:', error);
+    throw error;
+  }
+};
+// 获取用户最后操作时间（带缓存）
+export const getLastOperationTimeWithCache = async (address) => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS,
+      SMART_LOCK_ABI,
+      provider
+    );
+    const state = await contract.userStates(address);
+    const lastOp = Number(state.lastUnlockTime.toString());
+    
+    // 更新本地缓存
+    const cached = JSON.parse(localStorage.getItem('lockOperations') || '{}');
+    cached[address] = lastOp;
+    localStorage.setItem('lockOperations', JSON.stringify(cached));
+    
+    return lastOp;
+  } catch (error) {
+    console.error('从合约获取失败，使用缓存:', error);
+    const cached = JSON.parse(localStorage.getItem('lockOperations') || '{}');
+    return cached[address] || 0;
   }
 };

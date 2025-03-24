@@ -234,6 +234,22 @@
     cursor: pointer;
     transition: all 0.3s ease;
   }
+
+  .verify-button:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+.verify-button:hover:not(:disabled) {
+  background-color: #45a049;
+}
+
+.tx-hash {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
   
   .verify-button:hover {
     background: linear-gradient(135deg, #3c8a5b, #2e7046);
@@ -429,4 +445,41 @@
     padding: 12px;
     text-align: center;
   }
-  
+  /* 加载动画 */
+.loading-dots:after {
+  content: ' .';
+  animation: dots 1s steps(5, end) infinite;
+}
+
+.loading-dots {
+  display: inline-block;
+  width: 80px; /* 固定宽度 */
+  height: 24px; /* 固定高度 */
+  vertical-align: middle;
+}
+
+.lock-btn {
+  width: 80px; /* 固定宽度 */
+  height: 32px; /* 固定高度 */
+  transition: none; /* 禁用动画 */
+}
+
+@keyframes dots {
+  0%, 20% { content: ' .'; }
+  40% { content: ' ..'; }
+  60% { content: ' ...'; }
+  80%, 100% { content: ' '; }
+}
+
+/* 禁用状态样式 */
+.lock-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* 过期提示样式 */
+.expired-warning {
+  color: #ff6b6b;
+  font-size: 12px;
+  margin-top: 5px;
+}

@@ -8,7 +8,8 @@ import {
   getLockStatus,
   toggleLockStatus,
   sendMessageToAdmin,
-  getAdmins
+  getLastOperationTimeWithCache,
+  toggleUserLockWithIPFS
 } from './js/Metamask';
 import './App.css';
 import AdminPage from './js/AdminPage';
@@ -22,6 +23,8 @@ function App() {
   const [activeModal, setActiveModal] = useState(null);
   const [isSystemUser, setIsSystemUser] = useState(false);
   const navigate = useNavigate();
+  const [lastOperationTime, setLastOperationTime] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
  // 连接钱包处理
  const handleConnectMetaMask = async () => {
@@ -41,6 +44,7 @@ function App() {
   const isVerified = await checkIfVerified(address);
   if (isVerified) {
     setIsSystemUser(true);
+    await fetchLockStatus();
     // 获取并设置过期时间
     const expiryTimestamp = await getUserIdentityExpiry(address);
     const expiryDate = new Date(expiryTimestamp * 1000);
@@ -52,6 +56,22 @@ function App() {
   }
 };
 
+// 获取锁状态和最后操作时间
+const fetchLockStatus = async () => {
+  if (!userAddress) return;
+  
+  try {
+    const [locked, lastOp] = await Promise.all([
+      getLockStatus(userAddress),
+      getLastOperationTimeWithCache(userAddress)
+    ]);
+    
+    setIsLocked(locked);
+    setLastOperationTime(lastOp);
+  } catch (error) {
+    console.error('获取状态失败:', error);
+  }
+};
 
 
   // 切换门锁状态（调用合约的 lock 或 unlock 方法）
@@ -60,12 +80,27 @@ function App() {
       alert('请先登录并确保您是系统用户！');
       return;
     }
-    if (expirationTime && Date.now() > expirationTime.getTime()) {
-      alert('身份验证已过期，请联系管理员重新验证！');
-      setActiveModal('box2');
-      return;
+    
+    try {
+      setIsProcessing(true);
+      const result = await toggleUserLockWithIPFS(userAddress, isLocked);
+      
+      // 更新本地状态
+      setIsLocked(!isLocked);
+      setLastOperationTime(Math.floor(Date.now() / 1000));
+      
+      // 更新缓存
+      const cached = JSON.parse(localStorage.getItem('lockOperations') || '{}');
+      cached[userAddress] = Math.floor(Date.now() / 1000);
+      localStorage.setItem('lockOperations', JSON.stringify(cached));
+      
+      alert(`操作成功！区块高度：${result.blockNumber}`);
+    } catch (error) {
+      console.error('操作失败:', error);
+      alert(`操作失败: ${error.reason || error.message}`);
+    } finally {
+      setIsProcessing(false);
     }
-    await toggleLockStatus(userAddress, setIsLocked);
   };
 
   // 根据点击不同的小框体打开对应弹窗
@@ -122,19 +157,20 @@ function App() {
         </p>
         <p className="big-box-p">当前锁的状态</p>
         <div className="lock-status">
-          <div className={`lock-icon ${isLocked ? 'locked' : 'unlocked'}`}>
-            {isLocked ? '🔒' : '🔓'}
-          </div>
-          <h2 className="lock-message">
-            {isLocked ? '锁已关闭' : '锁已打开'}
-          </h2>
-          <button
-            className={`circle-button ${isLocked ? 'locked' : 'unlocked'}`}
-            onClick={toggleLock}
-          >
-            {isLocked ? '🔓 开锁' : '🔒 关锁'}
-          </button>
+        <div className={`lock-icon ${isLocked ? 'locked' : 'unlocked'}`}>
+          {isLocked ? '🔒' : '🔓'}
         </div>
+        <h2 className="lock-message">
+          {isLocked ? '锁已关闭' : '锁已打开'}
+        </h2>
+        <button
+          className={`circle-button ${isLocked ? 'locked' : 'unlocked'}`}
+          onClick={toggleLock}
+          disabled={isProcessing}
+        >
+          {isProcessing ? '处理中...' : (isLocked ? '🔓 开锁' : '🔒 关锁')}
+        </button>
+      </div>
       </div>
 
       <div className="small-boxes">

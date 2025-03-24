@@ -6,7 +6,7 @@ import AdminProposalPage from './AdminProposalPage';
 import AdminVote from'./AdminVote'
 import AdminProposalLog from './AdminProposalLog';
 
-import {getVerifiedUsers,getLockStatus,toggleUserLock,getUserUnlockTime,updateUserIdentity,getUserIdentityExpiry,fetchTransactionDetails,checkMetaMask} from './Metamask';
+import {getVerifiedUsers,getLockStatus,toggleUserLock,getUserUnlockTime,updateUserIdentity,getUserIdentityExpiry,checkMetaMask,updateUserExpiry,verifyuploadToIPFS,getLastLockOperationTime,getLockOperationHistory  } from './Metamask';
 
 function AdminPage() {
   // 新增钱包地址状态
@@ -25,6 +25,8 @@ function AdminPage() {
   const [showProposalModal, setShowProposalModal] = useState(false);
   const [showVoteModal, setShowVoteModal] = useState(false);
   const [showProposalLogModal, setshowProposalLogModal] = useState(false);
+  const [processingStates, setProcessingStates] = useState({});
+
 
   
 
@@ -48,48 +50,71 @@ function AdminPage() {
   }, []);
 
   // 获取用户数据
-  const fetchVerifiedUsers = async () => {
-    try {
-      const users = await getVerifiedUsers();
-      const usersWithLockData = await Promise.all(
-        users.map(async (user) => {
-          const [unlockTime, lockStatus, expiry] = await Promise.all([
-            getUserUnlockTime(user),
-            getLockStatus(user),
-            getUserIdentityExpiry(user) // 获取身份验证过期时间
-          ]);
-          return { 
-            address: user, 
-            unlockTime: Number(unlockTime),
-            lockStatus,
-            expiry: Number(expiry)
-          };
-        })
-      );
-      setTableData(usersWithLockData);
-    } catch (error) {
-      console.log('Error fetching verified users:', error);
-    }
-  };
+const fetchVerifiedUsers = async () => {
+  try {
+    const users = await getVerifiedUsers();
+    
+    const usersWithLockData = await Promise.all(
+      users.map(async (user) => {
+        const [lockStatus, expiry, lastOperation] = await Promise.all([
+          getLockStatus(user),
+          getUserIdentityExpiry(user),
+          getLastLockOperationTime(user)
+        ]);
+        
+        return { 
+          address: user, 
+          lockStatus,
+          expiry: Number(expiry),
+          // 添加时间戳转换
+          lastLockOperation: lastOperation ? Number(lastOperation) : 0
+        };
+      })
+    );
+    
+    // 添加本地缓存
+    localStorage.setItem('lastOperations', JSON.stringify(
+      usersWithLockData.reduce((acc, user) => {
+        acc[user.address] = user.lastLockOperation;
+        return acc;
+      }, {})
+    ));
+    
+    setTableData(usersWithLockData);
+  } catch (error) {
+    console.log('Error:', error);
+    // 从本地缓存加载
+    const cached = JSON.parse(localStorage.getItem('lastOperations') || '{}');
+    setTableData(prev => prev.map(u => ({
+      ...u,
+      lastLockOperation: cached[u.address] || u.lastLockOperation
+    })));
+  }
+};
 
   useEffect(() => {
     fetchVerifiedUsers();
   }, []);
 
-  // 获取交易详情的方法
-  const recordTransaction = async (txHash, actionType) => {
-    const details = await fetchTransactionDetails(txHash);
-    if (details) {
-      setTransactionHistory(prev => [
-        {
-          ...details,
-          actionType,
-          timestamp: details.timestamp
-        },
-        ...prev
-      ]);
-    }
-  };
+ // 增强的交易记录方法
+const recordTransaction = async (txHash, actionType) => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const txReceipt = await provider.getTransaction(txHash);
+    const block = await provider.getBlock(txReceipt.blockNumber);
+    
+    const newRecord = {
+      actionType,
+      blockNumber: txReceipt.blockNumber,
+      timestamp: block.timestamp,
+      txHash
+    };
+
+    setTransactionHistory(prev => [newRecord, ...prev.slice(0, 49)]); // 保留最近50条记录
+  } catch (error) {
+    console.error('记录交易失败:', error);
+  }
+};
 
   const handleAddUser = async () => {
     try {
@@ -108,6 +133,13 @@ function AdminPage() {
       alert(`操作失败: ${error.reason || error.message}`);
     }
   };
+
+// 在 useEffect 中添加自动缓存逻辑
+useEffect(() => {
+  if (tableData.length > 0) {
+    localStorage.setItem('cachedUsers', JSON.stringify(tableData));
+  }
+}, [tableData]); // 当 tableData 变化时自动保存
   
   const handleDeleteUser = async () => {
     try {
@@ -127,90 +159,97 @@ function AdminPage() {
     }
   };
   
-  // const handleVerifyIdentity = async (address) => {
-  //   try {
-  //     // 生成验证操作描述
-  //     const verifyText = `更新用户 ${address} 的身份验证`;
-  //     const ipfsHash = await uploadToIPFS(verifyText);
-  
-  //     // 调用合约
-  //     const provider = new ethers.BrowserProvider(window.ethereum);
-  //     const signer = await provider.getSigner();
-  //     const contract = new ethers.Contract(IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI, signer);
-  //     const tx = await contract.updateUserExpiry(
-  //       address,
-  //       Math.floor(Date.now()/1000) + 300, // 使用默认300秒超时
-  //       ipfsHash
-  //     );
-  //     await tx.wait();
-  
-  //     const newExpiry = await getUserIdentityExpiry(address);
-  //     const updatedData = tableData.map(user => 
-  //       user.address === address ? { ...user, expiry: Number(newExpiry) } : user
-  //     );
-  //     setTableData(updatedData);
-  //     alert('用户验证已更新！');
-  //   } catch (error) {
-  //     console.error('验证失败:', error);
-  //     alert(`操作失败: ${error.reason || error.message}`);
-  //   }
-  // };
-
-
-  const handleToggleLock = async (address, currentStatus) => {
-    if (isProcessing) return;
-    setIsProcessing(true);
+// 修改后的 handleVerifyIdentity 函数（在 AdminPage.js 中）
+const handleVerifyIdentity = async (address) => {
+  try {
+    // 生成验证操作描述
+    const verifyText = `验证用户 ${address} 身份，有效期至 ${new Date(Date.now() + 300000).toLocaleString()}`;
     
-    try {
-      const result = await toggleUserLock(address, !currentStatus);
-  await recordTransaction(result.hash, currentStatus ? '解锁' : '锁定');
-     
-      
-      // 获取最新解锁时间
-      const newExpiry = await getUserUnlockTime(address);
-      
-      const updatedData = tableData.map(user => 
-        user.address === address ? { 
-          ...user, 
-          lockStatus: !currentStatus,
-          expiry: Number(newExpiry)
-        } : user
-      );
-      
-      setTableData(updatedData);
-      alert('锁状态已更新！');
-    } catch (error) {
-      console.error('切换锁状态失败:', error);
-      alert(`操作失败: ${error.reason || error.message}`);
-    }
-    setIsProcessing(false);
-  };
+    // 上传到IPFS
+    const ipfsHash = await verifyuploadToIPFS({
+      action: "identity_verification",
+      user: address,
+      description: verifyText,
+      timestamp: Date.now()
+    });
 
-  const handleVerifyIdentity = async (address) => {
-    try {
-      await updateUserIdentity(address, true);
-      
-      // 获取最新身份验证过期时间
-      const newExpiry = await getUserIdentityExpiry(address);
-      
-      const updatedData = tableData.map(user => {
-        if (user.address === address) {
-          return {
-            ...user,
-            expiry: Number(newExpiry),
-            lockStatus: false
-          };
-        }
-        return user;
-      });
-      
-      setTableData(updatedData);
-      alert('用户验证已更新！');
-    } catch (error) {
-      console.error('验证失败:', error);
-      alert(`操作失败: ${error.reason || error.message}`);
-    }
-  };
+    // 计算过期时间（当前时间 + 5分钟）
+    const newExpiry = Math.floor(Date.now() / 1000) + 300;
+
+    // 调用合约
+    await updateUserExpiry(address, newExpiry, ipfsHash);
+
+    // 更新本地数据
+    const updatedData = tableData.map(user => 
+      user.address === address ? { 
+        ...user, 
+        expiry: newExpiry,
+        lockStatus: false
+      } : user
+    );
+    
+    setTableData(updatedData);
+    alert('用户验证已更新！');
+  } catch (error) {
+    console.error('验证失败:', error);
+    alert(`操作失败: ${error.reason || error.message}`);
+  }
+};
+
+
+// 锁状态切换处理
+const handleToggleLock = async (address, currentStatus) => {
+  try {
+    // 获取当前时间戳（秒）
+    const now = Math.floor(Date.now() / 1000);  
+    // 获取身份验证过期时间
+    const identityExpiry = await getUserIdentityExpiry(address);
+     // 调试信息
+     console.log('当前时间:', now, '过期时间:', identityExpiry);
+ 
+     if (identityExpiry < now) {
+      alert(`身份验证已过期！过期时间：${new Date(identityExpiry * 1000).toLocaleString()}`);
+      return;
+    } 
+
+    // 设置单个按钮的加载状态
+    setProcessingStates(prev => ({
+      ...prev, 
+      [address]: true 
+    }));
+    
+    // 调用合约操作
+    const result = await toggleUserLock(address, currentStatus);
+    
+    // 记录交易详情
+    await recordTransaction(result.hash, currentStatus ? '解锁' : '锁定');
+    
+    // 更新本地数据
+    const newExpiry = await getUserUnlockTime(address);
+    setTableData(prev => prev.map(user => 
+      user.address === address ? {
+        ...user,
+        lockStatus: !currentStatus,
+        lastLockOperation: Math.floor(Date.now() / 1000)
+      } : user
+    ));
+    
+    alert(`已成功${currentStatus ? '解锁' : '锁定'}！`);
+    const cached = JSON.parse(localStorage.getItem('lockOperations') || '{}');
+    cached[address] = Math.floor(Date.now() / 1000);
+    localStorage.setItem('lockOperations', JSON.stringify(cached));
+  } catch (error) {
+    console.error('操作失败:', error);
+    alert(`操作失败: ${error.reason || error.message}`);
+  } finally {
+    // 清除加载状态
+    setProcessingStates(prev => ({
+      ...prev, 
+      [address]: false }));
+  }
+};
+
+
 
   // 弹窗关闭处理
   const handleCloseModal = (setter) => () => setter(false);
@@ -383,20 +422,36 @@ function AdminPage() {
       {filteredData.map((user, index) => (
         <tr key={index}>
           <td>{user.address}</td>
+          {/* <td>
+            {user.lastLockOperation > 0 ? 
+              new Date(user.lastLockOperation * 1000).toLocaleString() : 
+              '暂无记录'}
+          </td> */}
           <td>
-                      {user.expiry > 0 ? 
-                        new Date(user.expiry * 1000).toLocaleString() : 
-                        '暂无记录'}
-                    </td>
-          <td>
-            <button 
-              className={`lock-btn ${user.lockStatus ? 'locked' : 'unlocked'}`}
-              onClick={() => handleToggleLock(user.address, user.lockStatus)}
-              disabled={isProcessing}
-            >
-              {user.lockStatus ? '解锁' : '关锁'}
-            </button>
-          </td>
+  {user.lastLockOperation > 0 ? 
+    new Date(
+      // 优先使用实时数据，其次用缓存数据
+      (user.lastLockOperation || (JSON.parse(localStorage.getItem('lastOperations') || '{}')[user.address] || 0)) * 1000
+    ).toLocaleString() 
+    : '暂无记录'
+  }
+</td>
+
+                    <td>
+    <button   
+      className={`lock-btn ${user.lockStatus ? 'locked' : 'unlocked'}`}
+      onClick={() => handleToggleLock(user.address, user.lockStatus)}
+      disabled={processingStates[user.address] || user.expiry < Date.now()/1000}
+    >
+      {processingStates[user.address] ? (
+        <span className="loading-dots">处理中</span>
+      ) : user.lockStatus ? (
+        '解锁'
+      ) : (
+        '关锁'
+      )}
+    </button>
+  </td>
         </tr>
       ))}
     </tbody>
@@ -434,26 +489,26 @@ function AdminPage() {
         </thead>
         <tbody>
           {tableData.map((user, index) => (
-            <tr key={index}>
-              <td>{user.address}</td>
-             
-              <td>
-                {user.expiry > 0 ? 
-                  new Date(user.expiry * 1000).toLocaleString() : 
-                  '未验证'}
-              </td>
-              <td>
-                <button 
-                  className="verify-button"
-                  onClick={() => handleVerifyIdentity(user.address)}
-                >
-                  验证
-                </button>
-              </td>
-            </tr> 
-          ))}
-        </tbody>
-      </table>
+      <tr key={index}>
+        <td>{user.address}</td>
+        <td>
+          {user.expiry > 0 ? 
+            new Date(user.expiry * 1000).toLocaleString() : 
+            '未验证'}
+        </td>
+        <td>
+          <button 
+            className="verify-button"
+            onClick={() => handleVerifyIdentity(user.address)}
+            disabled={isProcessing}
+          >
+            {user.expiry > Date.now()/1000 ? '续期验证' : '立即验证'}
+          </button>
+        </td>
+      </tr> 
+    ))}
+  </tbody>
+</table>
 
       <button
         onClick={handleCloseModal(setShowOtherModal)}
