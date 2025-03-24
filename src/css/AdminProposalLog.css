@@ -1,0 +1,82 @@
+/* AdminProposalLog.css */
+.proposal-log-container {
+    padding: 2rem;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #214f2f, #3c8a5b);
+    color: #ffffff;
+    font-family: 'Arial', sans-serif;
+  }
+  
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  
+  .close-btn {
+    position: absolute;
+    top: 20px;
+    right: 22px;
+    background: none;
+    border: none;
+    font-size: 43px;
+    cursor: pointer;
+    color: #fff;
+  }
+  
+  .controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding: 1rem;
+    background: rgba(255,255,255,0.1);
+    border-radius: 8px;
+  }
+  
+  .filter-control select {
+    padding: 0.5rem;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    background: white;
+    color: #214f2f;
+  }
+  
+  .pagination-control {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .pagination-control button {
+    padding: 0.5rem 1rem;
+    background: #3c8a5b;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  .pagination-control button:disabled {
+    background: #95a5a6;
+    cursor: not-allowed;
+  }
+  
+  .loading {
+    text-align: center;
+    font-size: 1.2rem;
+    padding: 2rem;
+  }
+  
+  .no-data {
+    text-align: center;
+    padding: 2rem;
+    font-size: 1.2rem;
+  }
+  
+  .proposal-list {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  }

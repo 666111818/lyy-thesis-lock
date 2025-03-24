@@ -1,10 +1,13 @@
 import { ethers } from 'ethers';
+import axios from 'axios';
 import { IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI } from '../contract/identityOracle.js';
 import { SMART_LOCK_CONTRACT_ADDRESS, SMART_LOCK_ABI } from '../contract/SmartLock.js';
-import {GOVERNANCE_ADDRESS,GOVERNANCE_ABI} from '../contract/Governance.js'
+import {GOVERNANCE_ADDRESS,GOVERNANCE_ABI} from '../contract/Governance.js';
+const PINATA_API_KEY = process.env.REACT_APP_PINATA_KEY;
+const PINATA_SECRET = process.env.REACT_APP_PINATA_SECRET;
+
 
 // 连接MetaMask，获取用户的地址   
-
 export const checkMetaMask = async () => {
   if (window.ethereum) {
     try {
@@ -23,7 +26,6 @@ export const checkMetaMask = async () => {
   }
 };
 
-
 /**
  * 检查用户是否为管理员，通过调用 Governance 合约的 isAdmin 方法
  */
@@ -36,6 +38,48 @@ export const checkIfAdmin = async (address) => {
   } catch (error) {
     console.error('Error checking admin status:', error);
     return false;
+  }
+};
+
+// 检查用户是否已验证
+export const checkIfVerified = async (address) => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const identityContract = new ethers.Contract(IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI, provider);
+    const isVerified = await identityContract.isVerifiedUser(address);
+    return isVerified;
+  } catch (error) {
+    console.error('Error checking verified status:', error);
+    return false;
+  }
+};
+
+// IPFS上传函数
+export const uploadToIPFS = async (content) => {
+  try {
+    const res = await axios.post(
+      'https://api.pinata.cloud/pinning/pinJSONToIPFS',
+      {
+        timestamp: Date.now(),
+        operation: content
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          pinata_api_key: PINATA_API_KEY,
+          pinata_secret_api_key: PINATA_SECRET
+        }
+      }
+    );
+    return res.data.IpfsHash;
+  } catch (error) {
+    if (error.response) {
+      console.error('IPFS上传失败，响应数据：', error.response.data);
+    } else {
+      console.error('IPFS上传失败:', error.message);
+    }
+    throw new Error('IPFS上传失败');
+  
   }
 };
 
@@ -368,20 +412,26 @@ export const getUsersWithChangedIdentity = async () => {
   return users;
 };
 
-// 新增updateUserIdentity方法
+// updateUserIdentity方法，改变用户身份状态
 export const updateUserIdentity = async (userAddress, status) => {
-  const provider = new ethers.BrowserProvider(window.ethereum);
-  const signer = await provider.getSigner();
-  const contract = new ethers.Contract(IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI, signer);
-
   try {
-    console.log('Updating identity for:', userAddress, 'Status:', status);
-    const tx = await contract.updateUserIdentity(userAddress, status);
+    // 生成操作描述
+    const operationText = status ? 
+      `将用户 ${userAddress} 添加为系统用户` : 
+      `将用户 ${userAddress} 在系统内删除`;
+
+    // 上传到IPFS
+    const ipfsHash = await uploadToIPFS(operationText);
+
+    // 调用合约
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI, signer);
+    const tx = await contract.updateUserIdentity(userAddress, status, ipfsHash);
     await tx.wait();
-    console.log('Transaction confirmed');
-    return true;
+    return tx;
   } catch (error) {
-    console.error('Error updating user identity:', error);
+    console.error('操作失败:', error);
     throw error;
   }
 };

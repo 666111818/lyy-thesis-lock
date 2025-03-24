@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   checkMetaMask,
   checkIfAdmin,
-  checkSystemUser,
+  checkIfVerified,
   getUserIdentityExpiry,
   getLockStatus,
   toggleLockStatus,
@@ -29,41 +29,30 @@ function App() {
   if (!address) return;
 
   setUserAddress(address);
-  // Check if the user is an admin
+  
+  
   const isAdmin = await checkIfAdmin(address);
   if (isAdmin) {
     navigate('/admin');
     return;
+  }
+
+  // 检查用户验证状态
+  const isVerified = await checkIfVerified(address);
+  if (isVerified) {
+    setIsSystemUser(true);
+    // 获取并设置过期时间
+    const expiryTimestamp = await getUserIdentityExpiry(address);
+    const expiryDate = new Date(expiryTimestamp * 1000);
+    setExpirationTime(expiryDate);
   } else {
-    alert('Not an admin');
+    alert('你不是该系统用户，请联系管理员');
+    setActiveModal('box2');
+    setIsSystemUser(false);
   }
 };
 
-//   // 普通用户流程
-//   const systemUserStatus = await checkSystemUser(address);
-//   if (!systemUserStatus) {
-//     alert('未授权用户，请联系管理员');
-//     setActiveModal('box2');
-//     return;
-//   }
 
-//   setIsSystemUser(true);
-//   updateLockStatus(address);
-//   loadUserIdentityInfo(address);
-// };
-
- // 加载身份信息
- const loadUserIdentityInfo = async (address) => {
-  const expiryTimestamp = await getUserIdentityExpiry(address);
-  if (expiryTimestamp) {
-    setExpirationTime(new Date(expiryTimestamp * 1000));
-  }
-};
-
-const updateLockStatus = async (address) => {
-  const status = await getLockStatus(address);
-  setIsLocked(status);
-};
 
   // 切换门锁状态（调用合约的 lock 或 unlock 方法）
   const toggleLock = async () => {

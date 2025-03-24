@@ -369,6 +369,46 @@
     transition: all 0.3s ease;
     z-index: 1000;
   }
+  .block-info-button-1 {
+    position: fixed;
+    top: 30px;
+    left: 30px;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #3c8a5b, #2e7046);
+    color: white;
+    border-radius: 30px;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+    z-index: 1000;
+}
+
+.block-info-button-2 {
+  position: fixed;
+  top: 100px;
+  left: 30px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #3c8a5b, #2e7046);
+  color: white;
+  border-radius: 30px;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+  z-index: 1000;
+}
+.block-info-button-3 {
+  position: fixed;
+  top: 170px;
+  left: 30px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #3c8a5b, #2e7046);
+  color: white;
+  border-radius: 30px;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+  z-index: 1000;
+}
   
   .block-info-button:hover {
     transform: translateY(-2px);
