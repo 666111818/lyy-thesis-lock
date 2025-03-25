@@ -61,13 +61,15 @@ const fetchLockStatus = async () => {
   if (!userAddress) return;
   
   try {
-    const [locked, lastOp] = await Promise.all([
-      getLockStatus(userAddress),
-      getLastOperationTimeWithCache(userAddress)
-    ]);
+    const { isLocked, lastUnlockTime } = await getLockStatus(userAddress);
+    // 确保使用最新状态
+    setIsLocked(isLocked);
+    setLastOperationTime(Number(lastUnlockTime));
     
-    setIsLocked(locked);
-    setLastOperationTime(lastOp);
+    // 更新缓存
+    const cached = JSON.parse(localStorage.getItem('lockOperations') || '{}');
+    cached[userAddress] = Number(lastUnlockTime);
+    localStorage.setItem('lockOperations', JSON.stringify(cached));
   } catch (error) {
     console.error('获取状态失败:', error);
   }
@@ -83,18 +85,25 @@ const fetchLockStatus = async () => {
     
     try {
       setIsProcessing(true);
-      const result = await toggleUserLockWithIPFS(userAddress, isLocked);
+  
+      // 检查身份过期时间
+      const expiryTimestamp = await getUserIdentityExpiry(userAddress);
+      const currentTime = Math.floor(Date.now() / 1000);
+      if (expiryTimestamp < currentTime) {
+        alert('身份验证已过期，请联系管理员重新验证身份');
+        return;
+      }
+  
+      // 调用合约操作（传递当前锁定状态）
+      await toggleUserLockWithIPFS(userAddress, isLocked);
       
-      // 更新本地状态
-      setIsLocked(!isLocked);
-      setLastOperationTime(Math.floor(Date.now() / 1000));
+      // 等待3秒确保区块确认
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
-      // 更新缓存
-      const cached = JSON.parse(localStorage.getItem('lockOperations') || '{}');
-      cached[userAddress] = Math.floor(Date.now() / 1000);
-      localStorage.setItem('lockOperations', JSON.stringify(cached));
+      // 重新获取最新状态
+      await fetchLockStatus();
       
-      alert(`操作成功！区块高度：${result.blockNumber}`);
+      alert('操作成功！');
     } catch (error) {
       console.error('操作失败:', error);
       alert(`操作失败: ${error.reason || error.message}`);
@@ -102,6 +111,14 @@ const fetchLockStatus = async () => {
       setIsProcessing(false);
     }
   };
+
+  useEffect(() => {
+    if (userAddress && isSystemUser) {
+      // 每10秒自动刷新状态
+      const interval = setInterval(fetchLockStatus, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [userAddress, isSystemUser]);
 
   // 根据点击不同的小框体打开对应弹窗
   const handleSmallBoxClick = (boxId) => {
@@ -122,6 +139,9 @@ const fetchLockStatus = async () => {
     const ipfsHash = "QmdBG43dzTkvR2nLTgU6zrqGvummSzKtegNGwuJLvgrsNg";
     await sendMessageToAdmin(ipfsHash);
   };
+
+  
+  
 
   // 粒子效果，仅作示例，不影响业务逻辑
   useEffect(() => {
@@ -201,24 +221,6 @@ const fetchLockStatus = async () => {
         }}
       >
         {userAddress ? `${userAddress.slice(0, 6)}...${userAddress.slice(-4)}` : 'Connect MetaMask'}
-      </button>
-
-      <button
-        onClick={handleSendMessage}
-        style={{
-          position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          padding: '10px 20px',
-          backgroundColor: '#007bff',
-          border: 'none',
-          color: 'white',
-          cursor: 'pointer',
-          fontSize: '16px',
-          borderRadius: '5px'
-        }}
-      >
-        联系管理员
       </button>
 
       <div className="particle-container"></div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import '../css/smallbox1.css';
 import * as XLSX from 'xlsx';
-import { checkMetaMask, getUserOperationsTable } from './Metamask'; // 引入新的函数
+import { checkMetaMask, getUserOperationsTable,getUserIdentityExpiry,getUserOperations } from './Metamask'; // 引入新的函数
 
 function SmallBox1({ onClose }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -9,18 +9,41 @@ function SmallBox1({ onClose }) {
   const [currentUser, setCurrentUser] = useState(''); // 存储当前登录用户地址
 
   // 获取当前登录用户地址和操作记录
-  useEffect(() => {
-    const fetchData = async () => {
-      const userAddress = await checkMetaMask(); // 获取 MetaMask 当前用户地址
-      if (userAddress) {
-        setCurrentUser(userAddress);
-        const operations = await getUserOperationsTable(userAddress); // 获取用户操作记录
-        setLockOperations(operations); // 将获取的操作记录设置到 state 中
-      }
-    };
+useEffect(() => {
+  let isMounted = true; // 添加组件挂载状态标识
+  const fetchData = async () => {
+    try {
+      const userAddress = await checkMetaMask();
+      if (!userAddress || !isMounted) return;
 
-    fetchData();
-  }, []); // 组件首次加载时执行一次
+      // 新增身份过期检查（添加判断避免重复提示）
+      const expiry = await getUserIdentityExpiry(userAddress);
+      const currentTime = Math.floor(Date.now() / 1000);
+      if (expiry < currentTime) {
+        if (isMounted) {
+          alert('身份验证已过期，请联系管理员重新验证身份');
+          onClose();
+        }
+        return;
+      }
+
+      if (isMounted) {
+        setCurrentUser(userAddress);
+        const operations = await getUserOperations(userAddress);
+        setLockOperations(operations);
+      }
+    } catch (error) {
+      if (isMounted) {
+        console.error('数据获取失败:', error);
+      }
+    }
+  };
+
+  fetchData();
+  return () => {
+    isMounted = false; // 组件卸载时更新状态
+  };
+}, []);
 
   // 处理搜索框输入
   const handleSearchChange = (event) => {
@@ -68,30 +91,41 @@ function SmallBox1({ onClose }) {
         </div>
 
         {/* 表格 */}
-        <table className="table">
-          <thead>
-            <tr>
-              <th>User Address</th>
-              <th>Timestamp</th>
-              <th>Operation</th>
-            </tr>
-          </thead>
-          <tbody id="operations-table-body">
-            {filteredData.length > 0 ? (
-              filteredData.map((item, index) => (
-                <tr key={index}>
-                  <td>{item.user}</td>
-                  <td>{new Date(item.timestamp * 1000).toLocaleString()}</td> {/* 格式化时间戳 */}
-                  <td>{item.operation}</td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="3">没有匹配的数据</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+
+<table className="table">
+  <thead>
+    <tr>
+      <th>用户地址</th>
+      <th>操作时间</th>
+      <th>操作状态</th>
+      <th>IPFS记录</th>
+    </tr>
+  </thead>
+  <tbody>
+    {filteredData.length > 0 ? (
+      filteredData.map((event, index) => (
+        <tr key={index}>
+          <td>{event.user}</td>
+          <td>{new Date(event.timestamp * 1000).toLocaleString()}</td>
+          <td>{event.operation === "Lock" ? "锁定" : "解锁"}</td>
+          <td>
+            <a 
+              href={`https://ipfs.io/ipfs/${event.ipfsHash}`} 
+              target="_blank" 
+              rel="noopener noreferrer"
+            >
+              查看凭证
+            </a>
+          </td>
+        </tr>
+      ))
+    ) : (
+      <tr>
+        <td colSpan="4">暂无操作记录</td>
+      </tr>
+    )}
+  </tbody>
+</table>
       </div>
     </div> 
   );

@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import AdminProposalPage from './AdminProposalPage';
 import AdminVote from'./AdminVote'
 import AdminProposalLog from './AdminProposalLog';
+import UserMessages from './UserMessages';
 
 import {getVerifiedUsers,getLockStatus,toggleUserLock,getUserUnlockTime,updateUserIdentity,getUserIdentityExpiry,checkMetaMask,updateUserExpiry,verifyuploadToIPFS,getLastLockOperationTime,getLockOperationHistory  } from './Metamask';
 
@@ -569,6 +570,9 @@ const handleToggleLock = async (address, currentStatus) => {
     </div>
   </div>
 )}
+{/* <div className="user-messages-wrapper">
+  <UserMessages />
+</div> */}
     </div>
   );
 }
