@@ -1,4 +1,4 @@
-export const GOVERNANCE_ADDRESS  = "0x7E2cca574D0cF937e7Bb7c3450D95DFf8b545e5B"; 
+export const GOVERNANCE_ADDRESS  = "0x21F004839c7f7F93DFa57C0699D8e3e5E94BAbac"; 
 export const GOVERNANCE_ABI  =[
 	{
 		"inputs": [

@@ -1,4 +1,4 @@
-  import { ethers } from 'ethers';
+import { ethers } from 'ethers';
   import axios from 'axios';
   import { IDENTITY_CONTRACT_ADDRESS, IDENTITY_ABI } from '../contract/identityOracle.js';
   import { SMART_LOCK_CONTRACT_ADDRESS, SMART_LOCK_ABI } from '../contract/SmartLock.js';
@@ -71,6 +71,7 @@
           }
         }
       );
+      console.log('Pinata响应:', res.data); // 添加日志
       return res.data.IpfsHash;
     } catch (error) {
       if (error.response) {
@@ -567,37 +568,53 @@
 
   // ***********************对话
   
-  export const getReceivedMessages = async (userAddress) => {
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(
-        SMART_LOCK_CONTRACT_ADDRESS,
-        SMART_LOCK_ABI,
-        provider
-      );
+ 
+// 在getReceivedMessages中添加地址校验
+export const getReceivedMessages = async () => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const userAddress = (await signer.getAddress()).toLowerCase();
+
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS,
+      SMART_LOCK_ABI,
+      signer  // 使用signer代替provider进行写入操作
+    );
+
+    const messages = await contract.getMyReceivedMessages();
+    
+    return messages
+      .map(msg => ({
+        sender: msg.sender.toLowerCase(),
+        receiver: msg.receiver.toLowerCase(),
+        timestamp: msg.timestamp,
+        ipfsHash: msg.ipfsHash
+      }))
+      .filter(msg => msg.receiver === userAddress);
+  } catch (error) {
+    console.error('获取消息失败:', error);
+    throw error;
+  }
+};
+
+  // 新增管理员发送接口
+  export const adminSendMessage = async (userAddress, ipfsHash) => {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS, 
+      SMART_LOCK_ABI, 
+      signer
+    );
+    
+    // 添加管理员权限检查
+    const isAdmin = await checkIfAdmin(await signer.getAddress());
+    if (!isAdmin) throw new Error("无管理员权限");
   
-      // 调用合约获取原始消息数据
-      const rawMessages = await contract.getMessages(userAddress);
-  
-      // 用 for...of 确保同步执行异步操作
-      const formattedMessages = [];
-      for (const msg of rawMessages) {
-        const isAdmin = await checkIfAdmin(msg.sender); // 等待结果
-        formattedMessages.push({
-          sender: msg.sender,
-          timestamp: Number(msg.timestamp) * 1000, // 转换为毫秒
-          ipfsHash: msg.ipfsHash,
-          isAdmin: isAdmin,
-        });
-      }
-  
-      return formattedMessages;
-    } catch (error) {
-      console.error("获取消息失败:", error);
-      return [];
-    }
-  };
-  
+    const tx = await contract.adminSendMessage(userAddress, ipfsHash);
+    return tx;
+  }
 
   // 增强版消息发送（带重试机制）
 export const sendMessageToAdmin = async (adminAddress, ipfsHash, retries = 3) => {
@@ -610,6 +627,12 @@ export const sendMessageToAdmin = async (adminAddress, ipfsHash, retries = 3) =>
         SMART_LOCK_ABI,
         signer
       );
+
+      const today = Math.floor(Date.now() / 86400000);
+      const count = await contract.dailyMessageCount(signer.getAddress(), today);
+      if (count >= 5) {
+        throw new Error("今日发送消息已达上限");
+      }
 
       const tx = await contract.sendMessageToAdmin(adminAddress, ipfsHash);
       const receipt = await tx.wait();
@@ -629,28 +652,88 @@ export const sendMessageToAdmin = async (adminAddress, ipfsHash, retries = 3) =>
 // ====================== IPFS 功能增强 ====================== //
 // 通用IPFS内容获取（带缓存）
 const ipfsCache = new Map();
+const IPFS_GATEWAYS = [
+  'https://cloudflare-ipfs.com',
+  'https://ipfs.io',
+  'https://gateway.pinata.cloud',
+  'https://dweb.link'
+];
 
-export const fetchIPFSContent = async (cid, timeout = 5000) => {
-  if (ipfsCache.has(cid)) return ipfsCache.get(cid);
+// 修改后的 fetchIPFSContent 函数
+// export const fetchIPFSContent = async (cid, timeout = 5000, retries = 3) => {
+//   const IPFS_GATEWAYS = [
+//     'https://ipfs.io',
+//     'https://dweb.link',
+//     'https://gateway.pinata.cloud',
+//     'https://cf-ipfs.com'
+//   ];
 
+//   for (let attempt = 0; attempt < retries; attempt++) {
+//     for (const gateway of IPFS_GATEWAYS) {
+//       try {
+//         const controller = new AbortController();
+//         const timeoutId = setTimeout(() => controller.abort(), timeout);
+//         // const content = await originalFetchIPFSContent(cid);
+        
+//         const response = await axios.get(`${gateway}/ipfs/${cid}`, {
+//           signal: controller.signal
+//         });
+        
+//         clearTimeout(timeoutId);
+//         return response.data;
+//       } catch (error) {
+//         console.warn(`尝试 ${attempt + 1}，网关 ${gateway} 失败: ${error.message}`);
+//         if (attempt === retries - 1) throw error;
+//         await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+//       }
+//     }
+//   }
+//   throw new Error('所有网关尝试失败');
+// };
+export const fetchIPFSContent = async (cid) => {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const gateways = [
+      'https://ipfs.io/ipfs/',
+      'https://cloudflare-ipfs.com/ipfs/',
+      'https://dweb.link/ipfs/'
+    ];
 
-    const response = await axios.get(`https://cloudflare-ipfs.com/ipfs/${cid}`, {
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    
-    const data = response.data;
-    ipfsCache.set(cid, data);
-    return data;
+    for (const gateway of gateways) {
+      try {
+        const response = await axios.get(`${gateway}${cid}`, {
+          timeout: 10000,
+          transformResponse: [data => data] // 防止自动JSON解析
+        });
+
+        // 内容类型检测
+        const contentType = response.headers['content-type'] || '';
+        
+        // 处理文本内容
+        if (contentType.includes('text/plain')) {
+          try {
+            return JSON.parse(response.data);
+          } catch {
+            return { content: response.data };
+          }
+        }
+        
+        // 处理JSON内容
+        if (contentType.includes('application/json')) {
+          return JSON.parse(response.data);
+        }
+
+        return response.data;
+      } catch (error) {
+        console.warn(`网关 ${gateway} 失败: ${error.message}`);
+      }
+    }
+    throw new Error('所有IPFS网关请求失败');
   } catch (error) {
-    console.error(`IPFS内容获取失败: ${cid}`, error);
-    throw new Error(`无法加载内容: ${cid.slice(0,6)}...`);
+    console.error(`IPFS内容获取失败 ${cid}: ${error.message}`);
+    return { error: `无法加载内容: ${error.message}` };
   }
 };
+
 
 // ====================== 实时更新功能 ====================== //
 // 消息监听器工厂函数
@@ -683,9 +766,168 @@ export const createMessageListener = (callback) => {
       });
     }
   };
-
+  contract.on("MessageSent", (sender, receiver, timestamp, ipfsHash, event) => {
+    // 新增 receiver 参数处理
+    callback({
+      sender,
+      receiver, // 新增字段
+      timestamp: Number(timestamp) * 1000,
+      ipfsHash,
+      txHash: event.transactionHash
+    });
+  });
   contract.on("MessageSent", listener);
   
   // 返回关闭监听的方法
   return () => contract.off("MessageSent", listener);
+};
+
+// 新增发送消息给用户的方法
+export const sendMessageToUser = async (userAddress, ipfsHash) => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS, 
+      SMART_LOCK_ABI, 
+      signer
+    );
+    
+    const tx = await contract.sendMessageToUser(userAddress, ipfsHash);
+    await tx.wait();
+    return {
+      txHash: tx.hash,
+      blockNumber: tx.blockNumber,
+      timestamp: Date.now()
+    };
+  } catch (error) {
+    console.error('发送消息失败:', error);
+    throw error;
+  }
+};
+
+// ====================== 消息相关方法 ====================== 
+// 获取管理员接收的消息（封装合约调用）
+export const getAdminMessages = async () => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS,
+      SMART_LOCK_ABI,
+      signer // 改为使用signer而不是provider
+    );
+
+    // 检查管理员权限
+    const isAdmin = await checkIfAdmin(await signer.getAddress());
+    if (!isAdmin) throw new Error("无管理员权限");
+
+    // 调用合约方法
+    const rawMessages = await contract.getAdminMessages();
+    
+    return rawMessages.map(msg => ({
+      sender: msg.sender,
+      receiver: msg.receiver,
+      timestamp: Number(msg.timestamp) * 1000,
+      ipfsHash: msg.ipfsHash
+    }));
+  } catch (error) {
+    console.error("获取管理员消息失败:", error);
+    throw error;
+  }
+};
+
+// 发送解决方案（封装合约调用）
+export const sendResolutionToUser = async (userAddress, content) => {
+  try {
+    // 生成IPFS记录
+    const resolution = {
+      type: "admin_response",
+      content: content,
+      timestamp: Date.now(),
+      displayContent: "您的问题已解决" // 添加易读内容
+    };
+    
+    const ipfsHash = await uploadToIPFS(resolution);
+
+    // 获取合约实例
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS, 
+      SMART_LOCK_ABI, 
+      signer
+    );
+
+    // 调用管理员专用发送方法
+    const tx = await contract.adminSendMessage(userAddress, ipfsHash);
+    await tx.wait();
+    
+    return {
+      txHash: tx.hash,
+      receiver: userAddress,
+      ipfsHash: ipfsHash
+    };
+  } catch (error) {
+    console.error('发送解决方案失败:', error);
+    throw error;
+  }
+};
+
+// 获取完整对话记录（封装业务逻辑）
+export const getMessageThread = async (userAddress) => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const contract = new ethers.Contract(
+      SMART_LOCK_CONTRACT_ADDRESS,
+      SMART_LOCK_ABI,
+      provider
+    );
+
+    // 获取用户和管理员之间的双向消息
+    const [received, sent] = await Promise.all([
+      contract.getMyReceivedMessages(),
+      contract.getMySentMessages()
+    ]);
+
+    // 过滤出与目标用户的对话
+    const filtered = [...received, ...sent]
+      .filter(msg => 
+        msg.sender === userAddress || 
+        msg.receiver === userAddress
+      )
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    return filtered.map(msg => ({
+      direction: msg.receiver === userAddress ? 'out' : 'in',
+      sender: msg.sender,
+      timestamp: Number(msg.timestamp) * 1000,
+      ipfsHash: msg.ipfsHash
+    }));
+  } catch (error) {
+    console.error('获取对话记录失败:', error);
+    throw error;
+  }
+};
+
+// 持久化存储解决方案
+export const persistResolvedMessages = (resolvedList) => {
+  try {
+    const resolvedMap = resolvedList.reduce((acc, hash) => {
+      acc[hash] = true;
+      return acc;
+    }, {});
+    localStorage.setItem('resolvedMessages', JSON.stringify(resolvedMap));
+  } catch (error) {
+    console.error('持久化解决方案失败:', error);
+  }
+};
+
+// 初始化时加载
+export const loadResolvedMessages = () => {
+  try {
+    return JSON.parse(localStorage.getItem('resolvedMessages')) || {};
+  } catch {
+    return {};
+  }
 };

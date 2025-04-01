@@ -6,9 +6,6 @@ import {
   checkIfVerified,
   getUserIdentityExpiry,
   getLockStatus,
-  toggleLockStatus,
-  sendMessageToAdmin,
-  getLastOperationTimeWithCache,
   toggleUserLockWithIPFS
 } from './js/Metamask';
 import './App.css';
@@ -55,6 +52,9 @@ function App() {
     setIsSystemUser(false);
   }
 };
+
+
+
 
 // 获取锁状态和最后操作时间
 const fetchLockStatus = async () => {
@@ -121,23 +121,23 @@ const fetchLockStatus = async () => {
   }, [userAddress, isSystemUser]);
 
   // 根据点击不同的小框体打开对应弹窗
-  const handleSmallBoxClick = (boxId) => {
-    if (!userAddress || !isSystemUser) {
-      alert('请先登录并确保您是系统用户！');
-      return;
-    }
-    setActiveModal(boxId);
-  };
+// 根据点击不同的小框体打开对应弹窗
+const handleSmallBoxClick = (boxId) => {
+  if (!userAddress) {
+    alert('请先登录！');
+    return;
+  }
+  // 仅当点击“操作门锁记录”时，才需要确保是系统用户
+  if (boxId === 'box1' && !isSystemUser) {
+    alert('请先确保您是系统用户！');
+    return;
+  }
+  // “联系管理员”即 box2，无论是否系统用户都允许点击
+  setActiveModal(boxId);
+};
 
   const handleCloseModal = () => {
     setActiveModal(null);
-  };
-
-  // 发送消息给管理员，管理员地址从合约动态获取
-  const handleSendMessage = async () => {
-    // 请替换为实际生成且符合格式的 IPFS 哈希
-    const ipfsHash = "QmdBG43dzTkvR2nLTgU6zrqGvummSzKtegNGwuJLvgrsNg";
-    await sendMessageToAdmin(ipfsHash);
   };
 
   

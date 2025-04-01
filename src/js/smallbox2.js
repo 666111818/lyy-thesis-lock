@@ -6,7 +6,8 @@ import {
   sendMessageToAdmin, 
   uploadToIPFS,
   getReceivedMessages,
-  fetchIPFSContent
+  fetchIPFSContent,
+  checkIfAdmin
 } from './Metamask';
 
 function SmallBox2({ onClose }) {
@@ -23,33 +24,132 @@ function SmallBox2({ onClose }) {
    const loadMessages = async () => {
     try {
       setLoadingMessages(true);
-      const userAddress = await checkMetaMask();
-      const rawMessages = await getReceivedMessages(userAddress);
+      const userAddress = (await checkMetaMask()).toLowerCase();
       
-      const detailedMessages = await Promise.all(
-        rawMessages.map(async msg => {
-          try {
-            const content = await fetchIPFSContent(msg.ipfsHash);
-            return {
-              ...msg,
-              content,
-              time: new Date(msg.timestamp).toLocaleString(),
-              shortAddress: `${msg.sender.slice(0,6)}...${msg.sender.slice(-4)}`
-            };
-          } catch (error) {
-            return { ...msg, content: "内容加载失败", time: "未知时间" };
+      let rawMessages;
+      try {
+        rawMessages = await getReceivedMessages();
+      } catch (error) {
+        console.error('合约调用失败:', error);
+        alert('无法连接区块链网络，请检查MetaMask');
+        return;
+      }
+  
+      if (!Array.isArray(rawMessages)) {
+        console.error('无效的消息数据:', rawMessages);
+        return;
+      }
+  
+      const filteredMessages = rawMessages
+        .filter(msg => 
+          msg.receiver?.toLowerCase() === userAddress
+        )
+        .map(msg => ({
+          ...msg,
+          sender: msg.sender?.toLowerCase() || '未知发送者',
+          timestamp: msg.timestamp ? Number(msg.timestamp.toString()) : 0
+        }));
+  
+     // 在 loadMessages 函数中找到 filteredMessages.map 部分，修改为：
+const detailedMessages = await Promise.all(
+  filteredMessages.map(async msg => {
+    const shortSender = `${msg.sender.slice(0,6)}...${msg.sender.slice(-4)}`;
+    
+    try {
+      const response = await fetchIPFSContent(msg.ipfsHash);
+      console.log('IPFS响应:', response);
+
+      // 增强内容解析（支持多级嵌套）
+      const parseContent = (content) => {
+        try {
+          if (typeof content === 'string' && content.startsWith('{')) {
+            return parseContent(JSON.parse(content));
           }
-        })
-      );
       
+          if (typeof content === 'object') {
+            const operationData = content.operation || content;
+      
+            if (operationData.type === 'admin_response') {
+              return {
+                type: '管理员回复',
+                content: [
+                  `📨 ${operationData.displayContent || '系统通知'}`,
+                  `⏱️ ${new Date(operationData.timestamp).toLocaleString()}`,
+                  `👮 处理人：${operationData.content.resolver?.slice(0,8)}...`,
+                  `📝 处理结果：${operationData.content.message}`,
+                  ...(operationData.content.originalRequest ? 
+                    [`📩 原始请求：${parseContent(operationData.content.originalRequest).content}`] : [])
+                ].join('\n')
+              };
+            }
+      
+            return {
+              type: operationData.type === 'verify' ? '身份验证' : 
+                   operationData.type === 'addUser' ? '添加用户' :
+                   operationData.type === 'removeUser' ? '删除用户' : '其他',
+              content: [
+                `📌 ${operationData.content}`,
+                `⏰ 提交时间：${new Date(operationData.timestamp).toLocaleString()}`
+              ].join('\n')
+            };
+          }
+          return { content: String(content) };
+        } catch(e) {
+          console.error('内容解析错误:', e);
+          return { content: '内容格式异常' };
+        }
+      };
+
+      const parsed = parseContent(response);
+      
+      return {
+        ...msg,
+        timestamp: msg.timestamp ? Number(msg.timestamp.toString()) : 0,
+        // 添加排序用时间戳（优先使用响应时间）
+        sortTime: parsed?.content?.resolvedAt || msg.timestamp * 1000,
+        content: parsed.content,
+        type: parsed.type || '系统消息'
+      };
+      
+    } catch (error) {
+      console.error("内容加载失败:", error);
+      return {
+        ...msg,
+        sortTime: Date.now(),
+        content: `内容加载失败: ${error.message}`,
+        type: '错误'
+      };
+    }
+  })
+);
+
+// 排序逻辑（新增）
+const sortedMessages = detailedMessages.sort((a, b) => 
+  b.sortTime - a.sortTime
+).map(msg => ({
+  ...msg,
+  // 最终显示时间（带时区）
+  time: new Date(msg.sortTime).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  })
+}));
+
+setMessages(sortedMessages);
+  
       setMessages(detailedMessages);
     } catch (error) {
-      console.error('加载消息失败:', error);
-      alert('无法加载消息，请检查控制台');
+      console.error('加载失败:', error);
+      alert(`错误: ${error.message}`);
     } finally {
       setLoadingMessages(false);
     }
   };
+  
 
   // 获取管理员列表
   useEffect(() => {
@@ -69,6 +169,14 @@ function SmallBox2({ onClose }) {
     fetchAdmins();
   }, []);
 
+  // 在组件中监听账户变化
+useEffect(() => {
+  if (window.ethereum) {
+    window.ethereum.on('accountsChanged', (accounts) => {
+      loadMessages(); // 重新加载消息
+    });
+  }
+}, []);
   // 生成IPFS内容模板
   const generateMessageContent = async () => {
     const userAddress = await checkMetaMask();
@@ -89,6 +197,10 @@ function SmallBox2({ onClose }) {
   // 发送消息
 // 发送消息时调用
 const handleSend = async () => {
+  if (!(await checkIfAdmin(selectedAdmin))) {
+    alert('所选地址不是管理员');
+    return;
+  }
   if (!selectedAdmin) {
     alert('请选择管理员');
     return;
@@ -98,6 +210,7 @@ const handleSend = async () => {
     setIsSending(true);
     const content = await generateMessageContent();
     const ipfsHash = await uploadToIPFS(content);
+    console.log('IPFS内容已上传，哈希:', ipfsHash); // 添加调试日志
     
     // 传入选中的管理员地址
     await sendMessageToAdmin(selectedAdmin, ipfsHash);
@@ -110,6 +223,8 @@ const handleSend = async () => {
   } finally {
     setIsSending(false);
   }
+  await loadMessages(); // 发送成功后刷新消息列表
+  onClose(); // 关闭弹窗
 };
 
   return (
@@ -145,14 +260,20 @@ const handleSend = async () => {
               <div className="empty-msg">暂无消息</div>
             ) : (
               messages.map((msg, index) => (
-                <div key={index} className="message-card">
-                  <div className="message-header">
-                    <span className="admin-badge">管理员</span>
-                    <span className="message-time">{msg.time}</span>
-                    <span className="message-address">{msg.shortAddress}</span>
-                  </div>
-                  <pre className="message-content">{JSON.stringify(msg.content, null, 2)}</pre>
-                </div>
+                
+                <div className="message-card" key={index}>
+    <div className="message-header">
+      <span className="message-time">{msg.time}</span>
+    </div>
+    <pre className="message-content">
+      {typeof msg.content === 'object' 
+        ? JSON.stringify(msg.content, null, 2)
+        : (msg.content || "无有效内容")}
+    </pre>
+    {msg.content?.error && (
+      <div className="error-notice">⚠️ 内容加载异常</div>
+    )}
+  </div>
               ))
             )}
           </div>

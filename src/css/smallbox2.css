@@ -307,11 +307,11 @@ input[type="radio"]:checked + .radio-custom::after {
 }
 
 .message-card {
-  background: #1e3c27;
+  background: #1a2e25;
+  border: 1px solid #2e7046;
   border-radius: 8px;
   padding: 15px;
   margin-bottom: 15px;
-  border: 1px solid #2a4a2f;
 }
 
 .message-header {
@@ -339,14 +339,38 @@ input[type="radio"]:checked + .radio-custom::after {
   font-family: monospace;
 }
 
+user-label {
+  color: #5ac09d;
+  margin-right: 8px;
+}
+
+.user-address {
+  font-family: monospace;
+  color: #88c999;
+}
+/* 管理员标识样式 */
+.admin-badge {
+  background: #5ac09d;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  margin-right: 8px;
+}
+
+/* 消息卡片悬停效果 */
+.message-card:hover {
+  transform: translateX(5px);
+  box-shadow: 0 4px 12px rgba(90, 192, 157, 0.2);
+  transition: all 0.3s ease;
+}
+
 .message-content {
-  background: #2a5631;
+  background: #15231d;
   padding: 12px;
   border-radius: 6px;
-  color: #d4ecd4;
   white-space: pre-wrap;
-  font-family: 'Courier New', Courier, monospace;
-  margin: 0;
+  font-size: 14px;
 }
 
 .loading-msg, .empty-msg {
@@ -367,4 +391,32 @@ input[type="radio"]:checked + .radio-custom::after {
     flex-wrap: wrap;
     gap: 8px;
   }
+}
+
+.message-content {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-family: 'Courier New', monospace;
+  background: #1a2e25;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+.message-type {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-right: 10px;
+}
+
+/* 不同类型消息的标签颜色 */
+.type-admin { background: #4CAF50; }
+.type-verify { background: #2196F3; }
+.type-error { background: #f44336; }
+
+.address-highlight {
+  color: #4CAF50;
+  font-weight: bold;
+  cursor: pointer;
 }

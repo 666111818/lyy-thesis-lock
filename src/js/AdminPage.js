@@ -5,9 +5,15 @@ import { ethers } from 'ethers';
 import AdminProposalPage from './AdminProposalPage';
 import AdminVote from'./AdminVote'
 import AdminProposalLog from './AdminProposalLog';
-import UserMessages from './UserMessages';
 
-import {getVerifiedUsers,getLockStatus,toggleUserLock,getUserUnlockTime,updateUserIdentity,getUserIdentityExpiry,checkMetaMask,updateUserExpiry,verifyuploadToIPFS,getLastLockOperationTime,getLockOperationHistory  } from './Metamask';
+
+import {getVerifiedUsers,
+  getLockStatus,
+  toggleUserLock,
+  getUserUnlockTime,
+  updateUserIdentity,
+  getUserIdentityExpiry,checkMetaMask,updateUserExpiry,verifyuploadToIPFS,
+  getLastLockOperationTime,getAdminMessages,fetchIPFSContent,sendResolutionToUser,checkIfAdmin, persistResolvedMessages,loadResolvedMessages } from './Metamask';
 
 function AdminPage() {
   // 新增钱包地址状态
@@ -27,6 +33,13 @@ function AdminPage() {
   const [showVoteModal, setShowVoteModal] = useState(false);
   const [showProposalLogModal, setshowProposalLogModal] = useState(false);
   const [processingStates, setProcessingStates] = useState({});
+const [showMessageModal, setShowMessageModal] = useState(false);
+const [messages, setMessages] = useState([]);
+const [selectedMessage, setSelectedMessage] = useState(null);
+const [replyContent, setReplyContent] = useState('已解决');
+const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+const [selectedFilter, setSelectedFilter] = useState('unresolved');
+const [resolvedMessages, setResolvedMessages] = useState(() => loadResolvedMessages());
 
 
   
@@ -279,6 +292,162 @@ const handleToggleLock = async (address, currentStatus) => {
     link.click();
   };
 
+  // 获取消息
+
+// 获取消息
+// 修改后的fetchMessages函数
+const fetchMessages = async () => {
+  try {
+    setIsLoadingMessages(true);
+    const isAdmin = await checkIfAdmin(userAddress);
+    if (!isAdmin) return;
+
+    const rawMessages = await getAdminMessages();
+    const currentResolved = loadResolvedMessages();
+
+    const messagesWithContent = await Promise.all(
+      rawMessages.map(async (msg) => {
+        try {
+          // 添加短地址显示
+          const shortSender = `${msg.sender.slice(0,6)}...${msg.sender.slice(-4)}`;
+          
+          // 增强IPFS内容获取
+          const content = await fetchIPFSContent(msg.ipfsHash);
+          
+          // 改进内容解析
+          const parsedContent = (() => {
+            try {
+              const data = typeof content === 'string' ? JSON.parse(content) : content;
+              
+              // 支持多级嵌套解析
+              const getNestedContent = (obj) => {
+                if (obj.operation) return getNestedContent(obj.operation);
+                if (obj.content) return getNestedContent(obj.content);
+                return obj;
+              };
+
+              const finalContent = getNestedContent(data);
+              
+              return {
+                type: finalContent.type || '系统消息',
+                content: finalContent.content || finalContent,
+                timestamp: finalContent.timestamp || msg.timestamp
+              };
+            } catch(e) {
+              return { 
+                type: '数据异常',
+                content: JSON.stringify(content),
+                timestamp: Date.now()
+              };
+            }
+          })();
+
+          return {
+            ...msg,
+            shortSender,
+            status: currentResolved[msg.ipfsHash] ? 'resolved' : 'unresolved',
+            ...parsedContent,
+            formattedTime: new Date(parsedContent.timestamp).toLocaleString()
+          };
+        } catch (error) {
+          console.error('消息加载失败:', error);
+          return {
+            ...msg,
+            shortSender: '未知用户',
+            type: '数据异常',
+            content: `无法加载内容: ${error.message}`,
+            status: 'unresolved'
+          };
+        }
+      })
+    );
+
+    setMessages(messagesWithContent);
+  } catch (error) {
+    console.error('消息加载失败:', error);
+    alert(`加载失败: ${error.message}`);
+  } finally {
+    setIsLoadingMessages(false);
+  }
+};
+
+const filteredMessages = messages.filter(msg => {
+  if (selectedFilter === 'all') return true;
+  if (selectedFilter === 'resolved') return resolvedMessages[msg.ipfsHash];
+  return !resolvedMessages[msg.ipfsHash];
+});
+
+// 发送解决方案
+const handleSendResolution = async (originalMsg) => {
+  try {
+    setIsProcessing(true);
+    
+    // 生成解决确认消息
+    const resolutionContent = {
+      type: "issue_resolved",
+      message: "您的问题已解决",
+      originalRequest: originalMsg.content,
+      resolvedAt: Date.now(),
+      resolver: userAddress
+    };
+
+    // 发送解决确认消息
+    const result = await sendResolutionToUser(
+      originalMsg.sender, // 发送给原请求用户
+      resolutionContent
+    );
+
+    const newResolved = { ...resolvedMessages, [originalMsg.ipfsHash]: true };
+    persistResolvedMessages(newResolved);
+    setResolvedMessages(newResolved); // 确保状态更新
+
+    setMessages(prev => 
+      prev.map(msg => 
+        msg.ipfsHash === originalMsg.ipfsHash 
+          ? { ...msg, status: 'resolved' }
+          : msg
+      )
+    );
+
+    alert(`已发送解决确认！交易哈希：${result.txHash}`);
+  } catch (error) {
+    alert(`操作失败: ${error.message}`);
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+useEffect(() => {
+  const loadCache = async () => {
+    // 用户数据
+    const cachedUsers = JSON.parse(localStorage.getItem('cachedUsers'));
+    if (cachedUsers) setTableData(cachedUsers);
+    
+    // 消息状态
+    const resolved = loadResolvedMessages();
+    // 可以在此处合并链上数据...
+  };
+  loadCache();
+}, []);
+useEffect(() => {
+  const checkAdminStatus = async () => {
+    if (userAddress) {
+      const isAdmin = await checkIfAdmin(userAddress);
+      if (!isAdmin) {
+        alert('当前账户不是管理员');
+        setShowMessageModal(false);
+      }
+    }
+  };
+  checkAdminStatus();
+}, [showMessageModal]);
+
+
+useEffect(() => {
+  if (showMessageModal && userAddress) {
+    fetchMessages();
+  }
+}, [showMessageModal]);
   return (
     <div className="admin-container">
       <button
@@ -313,6 +482,165 @@ const handleToggleLock = async (address, currentStatus) => {
       <div className="block-info-button-3" onClick={() => setShowVoteModal(true)}>
   投票
 </div>    
+
+<div className="block-info-button-4" onClick={() => setShowMessageModal(true)}>
+  消息中心
+</div>
+
+          {/* 消息中心模态框 */}
+{/* 消息中心模态框 */}
+{showMessageModal && (
+  <div className="modal-overlay">
+    <div className="modal-content message-modal">
+      <h2>📨 用户消息中心</h2>
+      <div className="message-filter">
+        <button
+          className={`filter-btn ${selectedFilter === 'all' ? 'active' : ''}`}
+          onClick={() => setSelectedFilter('all')}
+          
+        >
+          全部消息
+        </button>
+        <button
+          className={`filter-btn ${selectedFilter === 'resolved' ? 'active' : ''}`}
+          onClick={() => setSelectedFilter('resolved')}
+        >
+          已解决
+        </button>
+        <button
+          className={`filter-btn ${selectedFilter === 'unresolved' ? 'active' : ''}`}
+          onClick={() => setSelectedFilter('unresolved')}
+        >
+          未解决
+        </button>
+      </div>
+      
+      {isLoadingMessages ? (
+        <div className="loading-overlay">
+          <div className="loading-spinner"></div>
+        </div>
+      )  : (
+        <>
+
+                <div className="message-list">
+                  {filteredMessages.length === 0 ? (
+                    <div className="empty-message">
+                      <div className="empty-icon">📭</div>
+                      <p className="empty-text">当前没有相关消息</p>
+                    </div>
+                  ) : (
+                    filteredMessages.map((msg, index) => (
+                      <div 
+                        key={index}
+                        className={`message-item ${msg.status === 'resolved' ? 'resolved' : ''} ${selectedMessage?.ipfsHash === msg.ipfsHash ? 'selected' : ''}`}
+                        onClick={() => setSelectedMessage(msg)}
+                      >
+                        <div className="message-header">
+                          <span className="user-address">
+                            👤 {msg.shortSender}
+                            {msg.status === 'resolved' && (
+                              <span className="status-badge resolved">✅ 已解决</span>
+                            )}
+                          </span>
+                          <span className="message-time">
+                            🕒 {new Date(msg.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="message-preview">
+  {(() => {
+    const content = msg.content;
+    if (typeof content === 'object') {
+      const displayContent = content.content || content.operation;
+      // 检查是否为对象，如果是则转换为JSON字符串
+      if (typeof displayContent === 'object') {
+        return JSON.stringify(displayContent, null, 2);
+      }
+      return displayContent || '系统消息';
+    }
+    return content || '点击查看详情...';
+  })()}
+</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+          
+          {/* // 修改消息详情渲染部分 */}
+          {selectedMessage && (
+  <div className="message-detail">
+    <h3>📄 消息详情
+    <button 
+        onClick={() => setSelectedMessage(null)}
+        className="close-detail-btn"
+        style={{background: '#224320'}}
+      >
+        ✖
+      </button>
+    </h3>
+    <div className="detail-content">
+      <div className="message-meta">
+        <p>发送者: {selectedMessage.sender}</p>
+        <p>时间: {new Date(selectedMessage.timestamp).toLocaleString()}</p>
+      </div>
+  {/* 修改消息详情渲染部分 */}
+  <div className="message-content">
+  {selectedMessage.content ? (
+    (() => {
+      try {
+        let content;
+        if (typeof selectedMessage.content === 'string') {
+          content = JSON.parse(selectedMessage.content);
+        } else {
+          content = selectedMessage.content;
+        }
+
+        // 递归处理嵌套对象
+        const safeStringify = (obj) => {
+          return JSON.stringify(obj, (key, value) => {
+            if (typeof value === 'object' && value !== null) {
+              return safeStringify(value); // 递归处理嵌套对象
+            }
+            return value;
+          }, 2);
+        };
+
+        if (typeof content === 'object') {
+          return <pre>{safeStringify(content)}</pre>;
+        }
+        return content.toString();
+      } catch (e) {
+        // 解析失败时显示原始内容
+        return typeof selectedMessage.content === 'string' 
+          ? selectedMessage.content 
+          : JSON.stringify(selectedMessage.content);
+      }
+    })()
+  ) : '无内容'}
+</div>
+    </div>
+    <div className="message-actions">
+      <button 
+        className="resolve-button"
+        onClick={() => handleSendResolution(selectedMessage)}
+        disabled={isProcessing}
+      >
+        {isProcessing ? '发送中...' : '✅ 标记为已解决'}
+      </button>
+    </div>
+  </div>
+)}
+        </>
+      )}
+
+      <button 
+        onClick={() => setShowMessageModal(false)}
+        className="close-modal-button"
+      >
+        ✖ 关闭
+      </button>
+    </div>
+  </div>
+)}
       
 
       {/* 区块详情模态框 */}
@@ -399,17 +727,22 @@ const handleToggleLock = async (address, currentStatus) => {
           <div className="modal-content">
             <h2>用户管理</h2>
             <div className="search-export">
-              <input
-                type="text"
-                placeholder="搜索用户地址或状态..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="search-input"
-              />
-              <button className="export-button" onClick={handleExportTable}>
-                导出表格
-              </button>
-            </div>
+  <input
+    type="text"
+    placeholder="搜索用户地址或状态..."
+    style={{ borderRadius: '30px' }}
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+    className="search-input"
+  />
+  <div className="stats-container">
+    <span className="total-count">共102条</span>
+    <button className="export-button" onClick={handleExportTable}>
+      导出表格
+    </button>
+  </div>
+</div>
+
 
             <table className="user-table">
     <thead>
@@ -478,6 +811,9 @@ const handleToggleLock = async (address, currentStatus) => {
   <button className="operation-button delete" onClick={() => setShowDeleteModal(true)}>
     删除用户
   </button>
+  <div className="stats-container">
+    <span className="total-count">共 {tableData.length} 条</span>
+  </div>
 </div>
 
       <table className="user-table">
@@ -570,9 +906,6 @@ const handleToggleLock = async (address, currentStatus) => {
     </div>
   </div>
 )}
-{/* <div className="user-messages-wrapper">
-  <UserMessages />
-</div> */}
     </div>
   );
 }
